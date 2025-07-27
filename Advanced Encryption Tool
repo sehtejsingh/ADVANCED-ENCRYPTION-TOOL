@@ -1,1 +1,175 @@
+def generate_key(key_file_path):
+    """
+    Generates a cryptographically secure 32-byte (256-bit) key for AES encryption.
+    A new key is generated each time this function is called.
+    
+    Args:
+        key_file_path (str): The path where the generated key will be saved.
+    """
+    try:
+        # os.urandom() provides cryptographically strong random bytes.
+        # AES-256 requires a key that is 32 bytes long.
+        key = os.urandom(32)
+        
+        # Open the specified file in write-binary mode ('wb') and save the key.
+        with open(key_file_path, 'wb') as key_file:
+            key_file.write(key)
+        print(f"\n[SUCCESS] New key generated and saved to '{key_file_path}'")
+        print("[IMPORTANT] Keep this key file safe! It is required for decryption.")
+    except IOError as e:
+        print(f"\n[ERROR] Could not write key to file: {e}")
 
+def load_key(key_file_path):
+    """
+    Loads a previously generated AES key from a file.
+    
+    Args:
+        key_file_path (str): The path of the key file to load.
+        
+    Returns:
+        bytes: The key as a bytes object, or None if the file cannot be read.
+    """
+    try:
+        # Open the key file in read-binary mode ('rb') to load the key.
+        with open(key_file_path, 'rb') as key_file:
+            return key_file.read()
+    except FileNotFoundError:
+        print(f"\n[ERROR] Key file not found at '{key_file_path}'.")
+        return None
+    except IOError as e:
+        print(f"\n[ERROR] Could not read key file: {e}")
+        return None
+
+def encrypt_file(key, original_file_path, encrypted_file_path):
+    """
+    Encrypts a given file using the AES-256 algorithm in CBC mode.
+    
+    Args:
+        key (bytes): The 256-bit encryption key.
+        original_file_path (str): The path to the file to be encrypted.
+        encrypted_file_path (str): The path where the encrypted file will be saved.
+    """
+    try:
+        # Read the content of the original file (the plaintext).
+        with open(original_file_path, 'rb') as f:
+            plaintext = f.read()
+
+        # AES is a block cipher, meaning it encrypts data in fixed-size blocks.
+        # We use PKCS7 padding to ensure the plaintext is a multiple of the block size.
+        padder = padding.PKCS7(algorithms.AES.block_size).padder()
+        padded_plaintext = padder.update(plaintext) + padder.finalize()
+
+        # Generate a random 16-byte Initialization Vector (IV).
+        # The IV adds randomness, ensuring that encrypting the same data twice
+        # produces different ciphertexts. It is not secret and is stored with the ciphertext.
+        iv = os.urandom(16)
+
+        # Create the AES cipher object with the key and IV, using CBC mode.
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+        encryptor = cipher.encryptor()
+
+        # Encrypt the padded plaintext to produce the ciphertext.
+        ciphertext = encryptor.update(padded_plaintext) + encryptor.finalize()
+
+        # Write the IV followed by the ciphertext to the output file.
+        # The IV is needed for decryption, so it's prepended to the ciphertext.
+        with open(encrypted_file_path, 'wb') as f:
+            f.write(iv + ciphertext)
+        print(f"\n[SUCCESS] File '{original_file_path}' has been encrypted to '{encrypted_file_path}'")
+    except FileNotFoundError:
+        print(f"\n[ERROR] Original file not found at '{original_file_path}'.")
+    except IOError as e:
+        print(f"\n[ERROR] An I/O error occurred: {e}")
+
+
+def decrypt_file(key, encrypted_file_path, decrypted_file_path):
+    """
+    Decrypts a file that was encrypted using the corresponding encrypt_file function.
+    
+    Args:
+        key (bytes): The 256-bit encryption key used for encryption.
+        encrypted_file_path (str): The path to the encrypted file.
+        decrypted_file_path (str): The path where the decrypted file will be saved.
+    """
+    try:
+        # Read the entire content of the encrypted file.
+        with open(encrypted_file_path, 'rb') as f:
+            # The first 16 bytes are the IV.
+            iv = f.read(16)
+            # The rest of the file is the ciphertext.
+            ciphertext = f.read()
+
+        # Create the AES cipher for decryption with the same key, IV, and mode.
+        cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+        decryptor = cipher.decryptor()
+
+        # Decrypt the ciphertext.
+        padded_plaintext = decryptor.update(ciphertext) + decryptor.finalize()
+
+        # Remove the PKCS7 padding to retrieve the original plaintext.
+        unpadder = padding.PKCS7(algorithms.AES.block_size).unpadder()
+        plaintext = unpadder.update(padded_plaintext) + unpadder.finalize()
+
+        # Write the decrypted content to the output file.
+        with open(decrypted_file_path, 'wb') as f:
+            f.write(plaintext)
+        print(f"\n[SUCCESS] File '{encrypted_file_path}' has been decrypted to '{decrypted_file_path}'")
+    except FileNotFoundError:
+        print(f"\n[ERROR] Encrypted file not found at '{encrypted_file_path}'.")
+    except ValueError:
+        print("\n[ERROR] Decryption failed. The key may be incorrect or the file may be corrupted.")
+    except IOError as e:
+        print(f"\n[ERROR] An I/O error occurred: {e}")
+
+# --- Main Application Interface ---
+
+def main():
+    """
+    The main function that runs the command-line interface for the user.
+    """
+    print("=========================================")
+    print("   CodTech Advanced Encryption Tool      ")
+    print("=========================================")
+    print("      Task 4 - AES-256 File Utility      ")
+    print("=========================================")
+
+    while True:
+        print("\nPlease select an option:")
+        print("  1. Generate a new encryption key")
+        print("  2. Encrypt a file")
+        print("  3. Decrypt a file")
+        print("  4. Exit")
+        
+        choice = input("\nEnter your choice (1-4): ")
+
+        if choice == '1':
+            key_path = input("Enter the path to save the new key file (e.g., my_secret.key): ")
+            generate_key(key_path)
+
+        elif choice == '2':
+            key_path = input("Enter the path to your key file: ")
+            key = load_key(key_path)
+            if key:
+                original_file = input("Enter the path to the file you want to encrypt: ")
+                encrypted_file = input("Enter the path to save the encrypted file (e.g., data.encrypted): ")
+                encrypt_file(key, original_file, encrypted_file)
+
+        elif choice == '3':
+            key_path = input("Enter the path to your key file: ")
+            key = load_key(key_path)
+            if key:
+                encrypted_file = input("Enter the path to the file you want to decrypt: ")
+                decrypted_file = input("Enter the path to save the decrypted file (e.g., data.txt): ")
+                decrypt_file(key, encrypted_file, decrypted_file)
+
+        elif choice == '4':
+            print("\nExiting the tool. Thank you for using it!")
+            break
+
+        else:
+            print("\n[ERROR] Invalid choice. Please enter a number between 1 and 4.")
+
+# This standard Python construct ensures that the main() function is called
+# only when the script is executed directly.
+if __name__ == "__main__":
+    main()
